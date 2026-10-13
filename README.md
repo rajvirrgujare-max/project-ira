@@ -1,4 +1,4 @@
-# IRA V0.9.4 · Draft Schedule Engine
+# IRA V0.9.4.1 · Voice + Cache Cleanup
 
 Offline-first Android PWA. ₹0 API cost. No generative AI service.
 
