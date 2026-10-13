@@ -28,7 +28,51 @@ let toneOverride=null;const responseCounts={};
 function detectTone(text){if(toneOverride)return toneOverride;const s=clean(text).toLowerCase();if(/(?:मौत|निधन|गुज़र गए|गुजर गए|दुखद|बुरी खबर|sad news|passed away|died|death|hospital|बहुत दुखी|रो रहा)/i.test(s))return 'emotional';if(/(?:urgent|अर्जेंट|तुरंत|फौरन|अभी चाहिए|एक घंटे में|emergency|critical)/i.test(s))return 'urgent';if(/(?:deadline|डेडलाइन|late|delay|missed|लेट हो|प्रोड्यूसर|producer|meeting|मीटिंग)/i.test(s))return 'professional';return 'casual';}
 function vary(key,options){const i=responseCounts[key]||0;responseCounts[key]=i+1;return options[i%options.length];}
 function formatPlan(tasks,project){if(!tasks.length)return vary('empty:'+project,['अभी कोई pending काम नहीं है'+(project!=='General'?' ('+project+')':'')+'।','फिलहाल '+(project==='General'?'तुम्हारी task list खाली है।':project+' में कोई pending task नहीं दिख रहा।'),'अभी तक कोई अधूरा काम दर्ज नहीं है।']);const lines=tasks.slice(0,15).map((t,i)=>`${i+1}. ${t.title} (${t.project}, ${t.priority}${t.due?', '+t.due:''})`).join('\n');const intro=vary('plan:'+project,['आज के pending काम ये हैं:','चलो, काम की स्थिति देखते हैं:','ये रही अभी की task list:','फिलहाल इन कामों पर ध्यान देना है:','ठीक है, हमारी planning में ये काम बाकी हैं:']);return intro+'\n'+lines;}
+function contextFromMessages(messages){
+  const recent=messages.slice(-12);
+  for(let i=recent.length-1;i>=0;i--){
+    const m=recent[i];
+    if(m.who!=='ira')continue;
+    if(/कौन-सी deadline या deliverable प्रभावित|कौन-सी डेडलाइन|कौन-सा deliverable/i.test(m.text)){
+      let project='General';
+      for(let j=i-1;j>=0;j--){if(recent[j].who==='user'){project=projectOf(recent[j].text);break;}}
+      return {kind:'deadline-detail',project};
+    }
+    if(/कौन-से scenes|कौन से scenes|कितने scenes|कौन-से शॉट/i.test(m.text)){
+      let project='General';
+      for(let j=i-1;j>=0;j--){if(recent[j].who==='user'){project=projectOf(recent[j].text);if(project!=='General')break;}}
+      return {kind:'scene-detail',project};
+    }
+    if(/revised plan|revised schedule|priority|किससे शुरू/i.test(m.text))return {kind:'planning',project:'General'};
+  }
+  return null;
+}
+function followupReply(input,context){
+  if(!context)return null;
+  const s=clean(input);
+  if(/^(?:इरा|ira)[,\s]*/i.test(s)&&/आज|प्लान|task|टास्क/.test(s))return null;
+  const scene=s.match(/(?:storyboard|स्टोरीबोर्ड|scene|scenes|सीन|shots|शॉट)[^\n]{0,65}?(\d+|[०-९]+)\s*(?:scenes?|सीन|shots?|शॉट)?/i)||s.match(/(\d+|[०-९]+)\s*(?:scenes?|सीन|shots?|शॉट)/i);
+  const incomplete=/(?:नहीं हुए|नहीं हुआ|pending|बाकी|अधूरे|incomplete|बचे|missed)/i.test(s);
+  if(context.kind==='deadline-detail'&&(scene||incomplete)){
+    const project=projectOf(s)!=='General'?projectOf(s):context.project;
+    const count=scene?scene[1]:null;
+    const what=/(?:storyboard|स्टोरीबोर्ड)/i.test(s)?'storyboard scenes':/(?:shot|शॉट)/i.test(s)?'shots':'scenes';
+    return `समझ गई। ${project==='General'?'इस project':project} के ${count?count+' '+what:what} अभी पूरे नहीं हुए हैं। कौन-से तैयार हैं और कौन-से बाकी? फिर हम realistic revised schedule बनाएँगे। मैं बिना तुम्हारी अनुमति कोई task नहीं बदलूँगी।`;
+  }
+  if(context.kind==='scene-detail'&&/(?:scene|सीन|shot|शॉट|\d|[०-९]|बाकी|तैयार|complete|पूरा)/i.test(s)){
+    return 'ठीक है, यह detail पिछली deadline वाली discussion से जुड़ी है। बाकी scenes की list और नई deadline बताओ, फिर priority-wise plan बनाएँगे।';
+  }
+  return null;
+}
+async function respondWithContext(text,messages=[]){
+  const c=parseCommand(text);
+  if(c.type==='unknown'){
+    const reply=followupReply(text,contextFromMessages(messages));
+    if(reply)return reply;
+  }
+  return respond(text);
+}
 async function respond(text){const c=parseCommand(text);const tone=detectTone(text);if(c.type==='setTone'){toneOverride=c.tone;return c.tone==='professional'?'समझ गई। अब सीधे, professional तरीके से बात करेंगे।':'ठीक है! अब normal, friendly अंदाज़ में बात करते हैं।';}if(c.type==='unknown'&&tone==='emotional')return vary('emotional',['ये सुनकर दुख हुआ। अगर बात करना चाहो तो मैं सुन रही हूँ।','समझ रही हूँ, यह आसान नहीं है। तुम चाहो तो बताओ क्या हुआ।','मैं यहाँ हूँ। अभी किसी काम की जल्दी नहीं है।']);if(c.type==='unknown'&&tone==='urgent')return 'समय कम है। सबसे ज़रूरी काम क्या है और कितनी देर बची है? उसी से शुरू करते हैं।';if(c.type==='unknown'&&tone==='professional')return 'समझ गई। कौन-सी deadline या deliverable प्रभावित हुई है? उसके हिसाब से revised plan बनाते हैं।';switch(c.type){case 'addTask':{const t=await addTask(c.title,projectOf(c.title));return 'Task added: '+t.title+' ('+t.project+')';}case 'addMemory':{const m=await addMemory(c.note,projectOf(c.note));return 'याद रख लिया: '+m.note+' ('+m.project+')';}case 'completeIndex':{const tasks=plan(await all('tasks'));const t=tasks[c.index-1];if(!t)return 'Task number नहीं मिला। Pending tasks देखो।';await completeTask(t.id);return 'Completed: '+t.title;}case 'plan':case 'listTasks':{let tasks=plan(await all('tasks'));if(c.project!=='General')tasks=tasks.filter(t=>t.project===c.project||projectOf(t.title)===c.project);return formatPlan(tasks,c.project);}case 'listMemories':{let m=await all('memories');if(c.project!=='General')m=m.filter(x=>x.project===c.project||projectOf(x.note)===c.project);return m.length?m.slice(-12).map(x=>`• ${x.note} (${x.project})`).join('\n'):'अभी कोई memory save नहीं है।';}case 'help':return 'बोलो: इरा आज का प्लान दिखाओ; IRA add task The Last Coin storyboard; इरा याद रखो Insomniac blue tone।';default:return 'मैं अभी offline tasks और memories संभालती हूँ। Try: इरा आज का प्लान दिखाओ। (यह rule-based assistant है, generative AI नहीं।)';}}
 
-root.IRA={detectTone,vary,formatPlan,openDB,all,put,del,addTask,addMemory,completeTask,plan,projectOf,parseCommand,respond};
+root.IRA={contextFromMessages,followupReply,respondWithContext,detectTone,vary,formatPlan,openDB,all,put,del,addTask,addMemory,completeTask,plan,projectOf,parseCommand,respond};
 })(typeof window!=='undefined'?window:globalThis);

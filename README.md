@@ -1,11 +1,17 @@
-# IRA V0.7 Intelligent Brain (offline rules)
+# IRA V0.9 · Context Memory Engine
 
-Install/update: replace GitHub repository root files with this ZIP contents (do not upload ZIP itself). Keep icons in icons/. GitHub Pages on main /root remains unchanged. Wait for deployment and reload the PWA; if stale, close and reopen Chrome.
+Offline-first Android PWA. ₹0 API cost. No generative AI service.
 
-**Before update:** Export backup from the existing V0.6 app. Never commit the JSON backup to public GitHub.
+## Upgrade
+Replace the seven root files in GitHub Pages main/root, keeping icons/ untouched. Do not upload backups or personal JSON to public GitHub. The IndexedDB name `ira-v06` and version 1 remain unchanged, retaining existing tasks, memories and messages on the same browser/origin. Export a backup before updating.
 
-Compatibility: IndexedDB name `ira-v06`, schema version 1 and stores tasks/memories/messages intentionally remain unchanged. Existing device data is retained on the same origin/browser profile. Both `ira-v06` and `ira-v07` JSON backup formats import. Export uses `ira-v07`.
+## New
+- Recent chat history is read from existing IndexedDB messages for follow-up handling.
+- After a missed-deadline question, a reply such as "Storyboard के 7 scenes पूरे नहीं हुए हैं" is connected to the preceding project and deadline.
+- IRA asks for missing scene details rather than inventing them or automatically editing tasks.
+- Previous V0.8 personality, voice, tasks and memory features retained.
+- This is limited rule-based context tracking, not a generative conversational model.
 
-New offline Hindi/Hinglish variants, project recognition for The Last Coin, Insomniac and Project IRA, project-filtered plan and memories. This is **not** a generative AI or true conversational memory model. Speech recognition may need internet or browser services; offline text tasks and memory work after PWA assets are cached.
-
-Tests: `node tests/test.js`. Test on Android: open app, check existing task, add task via voice/text, request project plan, close/reopen, try airplane mode for text operations, export new backup.
+## Tests
+`node tests/test.js` and `node tests/context.test.js`.
+Test on Android by describing a missed deadline for The Last Coin and replying with pending storyboard scenes. Reopen app and repeat. Voice transcription accuracy depends on browser services.
