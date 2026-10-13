@@ -55,7 +55,7 @@ function contextFromMessages(messages){
 
     if(m.who==='user'&&stage==='schedule'&&/(?:कल|परसों|tomorrow|\d{1,2}[/-]\d{1,2}|दिन|days?|हफ्ते|week|शुक्रवार|friday|सोमवार|monday|मंगलवार|tuesday|बुधवार|wednesday|गुरुवार|thursday|शनिवार|saturday|रविवार|sunday)/i.test(t)){stage='date';deadline=t;}
 
-    // V0.9.3: the assistant's own question is also state.
+    // V0.9.4: preserve assistant question state and generate draft schedules.
     if(m.who==='ira'&&/(?:रोज़|रोज|daily|per day).*(?:कितने|how many).*(?:scene|सीन|shot|शॉट)/i.test(t))stage='dailyTarget';
     if(m.who==='ira'&&/(?:क्या मैं इसे tasks में save|tasks में save.*या.*draft|सिर्फ draft)/i.test(t))stage='saveChoice';
 
@@ -93,7 +93,18 @@ function followupReply(input,context){
     if(d){const words={एक:1,दो:2,तीन:3,चार:4,पांच:5,'पाँच':5,छह:6,सात:7,आठ:8,नौ:9,दस:10};const n=words[d[1]]??toNum(d[1]);return `ठीक है। ${context.project} के लिए रोज़ ${n} scenes का target रखेंगे। क्या मैं इसे tasks में save करूँ, या अभी सिर्फ draft schedule दिखाऊँ?`;}
   }
   if(context.kind==='saveChoice'){
-    if(/(?:draft|ड्राफ्ट|सिर्फ दिखा|अभी save नहीं|save मत)/i.test(s))return `ठीक है। ${context.project} का schedule अभी draft ही रहेगा; tasks में कोई बदलाव नहीं कर रही।`;
+    if(/(?:draft|ड्राफ्ट|सिर्फ दिखा|अभी save नहीं|save मत|schedule क्या|schedule दिखा|plan क्या|plan दिखा)/i.test(s)){
+      const scenes=(context.pending||[]).filter(Number.isFinite);
+      const target=Number(context.dailyTarget)||null;
+      if(scenes.length&&target){
+        const days=[];
+        for(let i=0;i<scenes.length;i+=target)days.push(scenes.slice(i,i+target));
+        const lines=days.map((group,i)=>`Day ${i+1}: ${group.map(n=>`Scene ${n}`).join(' + ')}`).join('\n');
+        const deadline=context.deadline?`\nDeadline: ${context.deadline}`:'';
+        return `ये रहा ${context.project} का draft schedule:\n${lines}${deadline}\nFinal step: सभी scenes का quick continuity review।\nअभी tasks में कोई बदलाव नहीं किया है।`;
+      }
+      return `ठीक है। ${context.project} का schedule draft ही रहेगा। पूरा draft बनाने के लिए pending scenes और daily target दोनों चाहिए; tasks में कोई बदलाव नहीं किया है।`;
+    }
     if(/(?:save|सेव|task|टास्क)/i.test(s))return `ठीक है। Save करने से पहले मैं exact task changes दिखाऊँगी और तुम्हारी स्पष्ट अनुमति के बाद ही उन्हें बदलूँगी।`;
   }
   return null;

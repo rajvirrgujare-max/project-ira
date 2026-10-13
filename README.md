@@ -1,4 +1,4 @@
-# IRA V0.9.3 · Context Memory Engine
+# IRA V0.9.4 · Draft Schedule Engine
 
 Offline-first Android PWA. ₹0 API cost. No generative AI service.
 
