@@ -1,4 +1,4 @@
-# IRA V0.9 · Context Memory Engine
+# IRA V0.9.1 · Context Memory Engine
 
 Offline-first Android PWA. ₹0 API cost. No generative AI service.
 

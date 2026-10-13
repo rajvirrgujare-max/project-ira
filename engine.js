@@ -29,46 +29,55 @@ function detectTone(text){if(toneOverride)return toneOverride;const s=clean(text
 function vary(key,options){const i=responseCounts[key]||0;responseCounts[key]=i+1;return options[i%options.length];}
 function formatPlan(tasks,project){if(!tasks.length)return vary('empty:'+project,['अभी कोई pending काम नहीं है'+(project!=='General'?' ('+project+')':'')+'।','फिलहाल '+(project==='General'?'तुम्हारी task list खाली है।':project+' में कोई pending task नहीं दिख रहा।'),'अभी तक कोई अधूरा काम दर्ज नहीं है।']);const lines=tasks.slice(0,15).map((t,i)=>`${i+1}. ${t.title} (${t.project}, ${t.priority}${t.due?', '+t.due:''})`).join('\n');const intro=vary('plan:'+project,['आज के pending काम ये हैं:','चलो, काम की स्थिति देखते हैं:','ये रही अभी की task list:','फिलहाल इन कामों पर ध्यान देना है:','ठीक है, हमारी planning में ये काम बाकी हैं:']);return intro+'\n'+lines;}
 function contextFromMessages(messages){
-  const recent=messages.slice(-12);
-  for(let i=recent.length-1;i>=0;i--){
-    const m=recent[i];
-    if(m.who!=='ira')continue;
-    if(/कौन-सी deadline या deliverable प्रभावित|कौन-सी डेडलाइन|कौन-सा deliverable/i.test(m.text)){
-      let project='General';
-      for(let j=i-1;j>=0;j--){if(recent[j].who==='user'){project=projectOf(recent[j].text);break;}}
-      return {kind:'deadline-detail',project};
+  const recent=messages.slice(-30);
+  let project='General',stage=null,completed=[],pending=[],total=null;
+  for(const m of recent){
+    const t=clean(m.text),p=projectOf(t);
+    if(m.who==='user'&&p!=='General'&&p!==project){project=p;stage=null;completed=[];pending=[];total=null;}
+    if(m.who==='user'&&/(?:deadline|डेडलाइन).*(?:निकल|miss|late|delay)/i.test(t))stage='deadline';
+    if(m.who==='ira'&&/कौन-सी deadline या deliverable प्रभावित|कौन-सी डेडलाइन/i.test(t))stage='deadline';
+    if(m.who==='user'&&stage&&/(?:storyboard|स्टोरीबोर्ड|scenes?|सीन|shots?|शॉट)/i.test(t)&&/(?:pending|बाकी|नहीं हुए|अधूरे)/i.test(t)){
+      stage='scenes';const n=t.match(/(\d+|[०-९]+)\s*(?:storyboard\s*)?(?:scenes?|सीन|shots?|शॉट)/i);if(n)total=Number(n[1].replace(/[०-९]/g,c=>String(c.charCodeAt(0)-0x966)));
     }
-    if(/कौन-से scenes|कौन से scenes|कितने scenes|कौन-से शॉट/i.test(m.text)){
-      let project='General';
-      for(let j=i-1;j>=0;j--){if(recent[j].who==='user'){project=projectOf(recent[j].text);if(project!=='General')break;}}
-      return {kind:'scene-detail',project};
+    if(m.who==='user'&&stage==='scenes'){
+      const x=t.match(/(?:scene|scenes|सीन)\s*(\d+)\s*(?:और|and|,|&)\s*(\d+)\s*(?:तैयार|complete|done|पूरे)/i);
+      if(x){completed=[Number(x[1]),Number(x[2])];pending=[];stage='schedule';}
+      const y=t.match(/(?:बाकी|remaining)\s*(\d+)\s*(?:scenes?|सीन)/i);
+      if(y&&completed.length){pending=Array.from({length:Number(y[1])},(_,i)=>Math.max(...completed)+i+1);}
     }
-    if(/revised plan|revised schedule|priority|किससे शुरू/i.test(m.text))return {kind:'planning',project:'General'};
+    if(m.who==='user'&&stage==='schedule'&&/(?:कल|परसों|tomorrow|\d{1,2}[/-]\d{1,2}|दिन|days?|हफ्ते|week)/i.test(t))stage='date';
   }
-  return null;
+  return stage?{kind:stage,project,completed,pending,total}:null;
 }
 function followupReply(input,context){
   if(!context)return null;
   const s=clean(input);
-  if(/^(?:इरा|ira)[,\s]*/i.test(s)&&/आज|प्लान|task|टास्क/.test(s))return null;
-  const scene=s.match(/(?:storyboard|स्टोरीबोर्ड|scene|scenes|सीन|shots|शॉट)[^\n]{0,65}?(\d+|[०-९]+)\s*(?:scenes?|सीन|shots?|शॉट)?/i)||s.match(/(\d+|[०-९]+)\s*(?:scenes?|सीन|shots?|शॉट)/i);
-  const incomplete=/(?:नहीं हुए|नहीं हुआ|pending|बाकी|अधूरे|incomplete|बचे|missed)/i.test(s);
-  if(context.kind==='deadline-detail'&&(scene||incomplete)){
-    const project=projectOf(s)!=='General'?projectOf(s):context.project;
-    const count=scene?scene[1]:null;
-    const what=/(?:storyboard|स्टोरीबोर्ड)/i.test(s)?'storyboard scenes':/(?:shot|शॉट)/i.test(s)?'shots':'scenes';
-    return `समझ गई। ${project==='General'?'इस project':project} के ${count?count+' '+what:what} अभी पूरे नहीं हुए हैं। कौन-से तैयार हैं और कौन-से बाकी? फिर हम realistic revised schedule बनाएँगे। मैं बिना तुम्हारी अनुमति कोई task नहीं बदलूँगी।`;
+  if(projectOf(s)!=='General'&&projectOf(s)!==context.project)return null;
+  if(/(?:आज.{0,15}प्लान|task list|टास्क दिखाओ|याद रखो|add task|टास्क जोड़ो)/i.test(s))return null;
+  if(context.kind==='deadline'&&/(?:storyboard|स्टोरीबोर्ड|scene|सीन|shot|शॉट)/i.test(s)&&/(?:pending|बाकी|नहीं हुए|अधूरे)/i.test(s)){
+    const m=s.match(/(\d+|[०-९]+)\s*(?:storyboard\s*)?(?:scenes?|सीन|shots?|शॉट)/i);
+    const n=m?m[1]+' ':'';
+    return `समझ गई। ${context.project==='General'?'इस project':context.project} के ${n}storyboard scenes अभी पूरे नहीं हुए हैं। कौन-से तैयार हैं और कौन-से बाकी? फिर revised schedule बनाएँगे। बिना अनुमति कोई task नहीं बदलूँगी।`;
   }
-  if(context.kind==='scene-detail'&&/(?:scene|सीन|shot|शॉट|\d|[०-९]|बाकी|तैयार|complete|पूरा)/i.test(s)){
-    return 'ठीक है, यह detail पिछली deadline वाली discussion से जुड़ी है। बाकी scenes की list और नई deadline बताओ, फिर priority-wise plan बनाएँगे।';
+  if(context.kind==='scenes'){
+    const m=s.match(/(?:scene|scenes|सीन)\s*(\d+)\s*(?:और|and|,|&)\s*(\d+)\s*(?:तैयार|complete|done|पूरे)/i);
+    const n=s.match(/(?:बाकी|remaining)\s*(\d+)\s*(?:scenes?|सीन)/i);
+    if(m){const a=Number(m[1]),b=Number(m[2]);const count=n?Number(n[1]):null;
+      const range=count&&b>=a?`Scene ${b+1} से ${b+count}`:'बाकी scenes';
+      return `समझ गई। ${context.project} में Scene ${a} और ${b} तैयार हैं, और ${range} pending हैं। नई deadline क्या रखें? फिर practical schedule बनाएँगे।`;
+    }
   }
+  if(context.kind==='schedule'){
+    if(/(?:कल|परसों|tomorrow|\d{1,2}[/-]\d{1,2}|दिन|days?|हफ्ते|week)/i.test(s))return `ठीक है। ${context.project} के pending storyboard scenes के लिए यह deadline मानकर योजना बनाएँगे। रोज़ कितने scenes पूरे करना realistic रहेगा? अभी tasks में कोई बदलाव नहीं किया है।`;
+    if(/(?:scene|सीन|shot|शॉट|\d)/i.test(s))return `समझ गई। ${context.project} की storyboard planning जारी है। नई deadline बताओ ताकि scenes को दिनों में बाँट सकें।`;
+  }
+  if(context.kind==='date'&&/(?:scene|सीन|रोज|daily|per day|दिन|day|\d)/i.test(s))return `ठीक है। ${context.project} का scene-wise plan बनाने से पहले बताओ: क्या मैं इसे tasks में save करूँ, या अभी सिर्फ draft दिखाऊँ?`;
   return null;
 }
 async function respondWithContext(text,messages=[]){
-  const c=parseCommand(text);
-  if(c.type==='unknown'){
-    const reply=followupReply(text,contextFromMessages(messages));
-    if(reply)return reply;
+  const c=parseCommand(text),context=contextFromMessages(messages);
+  if(c.type==='unknown'||(c.type==='listTasks'&&context&&/(?:scene|सीन|storyboard|स्टोरीबोर्ड)/i.test(text))){
+    const reply=followupReply(text,context);if(reply)return reply;
   }
   return respond(text);
 }
